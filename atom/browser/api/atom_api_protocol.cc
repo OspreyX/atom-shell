@@ -212,7 +212,7 @@ bool Protocol::IsHandledProtocol(const std::string& scheme) {
 
 void Protocol::InterceptProtocol(const std::string& scheme,
                                  const JsProtocolHandler& callback) {
-  if (!job_factory_->HasProtocolHandler(scheme))
+  if (!job_factory_->IsHandledProtocol(scheme))
     return node::ThrowError("Scheme does not exist.");
 
   if (ContainsKey(protocol_handlers_, scheme))
@@ -263,7 +263,7 @@ void Protocol::InterceptProtocolInIO(const std::string& scheme) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   ProtocolHandler* original_handler = job_factory_->GetProtocolHandler(scheme);
-  if (original_handler == NULL) {
+  if (original_handler == NULL && !job_factory_->IsHandledProtocol(scheme)) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
         &Protocol::EmitEventInUI,
         base::Unretained(this),
@@ -271,8 +271,14 @@ void Protocol::InterceptProtocolInIO(const std::string& scheme) {
     return;
   }
 
-  job_factory_->ReplaceProtocol(
-      scheme, new CustomProtocolHandler(this, original_handler));
+  if (original_handler == NULL && job_factory_->IsHandledProtocol(scheme)) {
+    job_factory_->SetProtocolHandler(
+        scheme, new CustomProtocolHandler(this, original_handler));
+  } else {
+    job_factory_->ReplaceProtocol(
+        scheme, new CustomProtocolHandler(this, original_handler));
+  }
+
   BrowserThread::PostTask(BrowserThread::UI,
                           FROM_HERE,
                           base::Bind(&Protocol::EmitEventInUI,
